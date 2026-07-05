@@ -1,12 +1,13 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { RegisterRequest } from '@/auth/dtos/register.request';
-import { throwIf } from '@/common/utils/throw-if.util';
+import { throwIf, throwIfNull } from '@/common/utils/throw-if.util';
 import { JwtService } from '@nestjs/jwt';
-import { hash } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UserEntity } from '@/user/user.entity';
 import { Repository } from 'typeorm';
 import { AuthResponse } from '@/auth/dtos/auth-response';
+import { LoginRequest } from '@/auth/dtos/login.request';
 
 @Injectable()
 export class AuthService {
@@ -23,6 +24,17 @@ export class AuthService {
             password: await hash(request.password, 10),
         });
         return await this.toAuthResponse(registered);
+    }
+
+    async login(request: LoginRequest): Promise<AuthResponse> {
+        const user = await this.userRepository
+            .createQueryBuilder('u')
+            .addSelect('u.password')
+            .where('u.username = :username', { username: request.username })
+            .getOne();
+        throwIfNull(user, 'Tên đăng nhập hoặc mật khẩu không đúng!', HttpStatus.UNAUTHORIZED);
+        throwIf(!(await compare(request.password, user.password)), 'Tên đăng nhập hoặc mật khẩu không đúng!', HttpStatus.UNAUTHORIZED);
+        return await this.toAuthResponse(user);
     }
 
     private async toAuthResponse({ id, username, fullname }: UserEntity): Promise<AuthResponse> {
