@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
+import { SqlLoggerSubscriber } from './database/sql-logger.subscriber';
 
 @Module({
     imports: [
@@ -16,9 +17,8 @@ import { AuthModule } from './auth/auth.module';
             database: 'nestjs_task_manager',
             autoLoadEntities: true,
             synchronize: true,
-            logging: ['query', 'error', 'warn'],
-            logger: 'formatted-console',
-            maxQueryExecutionTime: 1000,
+            logging: false,
+            subscribers: [SqlLoggerSubscriber],
         }),
         UserModule,
         AuthModule,
