@@ -8,6 +8,7 @@ import { UserEntity } from '@/user/user.entity';
 import { Repository } from 'typeorm';
 import { AuthResponse } from '@/auth/dtos/auth-response';
 import { LoginRequest } from '@/auth/dtos/login.request';
+import { JwtPayload } from '@/auth/types/jwt-payload.type';
 
 @Injectable()
 export class AuthService {
@@ -39,7 +40,7 @@ export class AuthService {
 
     private async toAuthResponse({ id, username, fullname }: UserEntity): Promise<AuthResponse> {
         return {
-            token: await this.jwtService.signAsync({ id, username, fullname }, { expiresIn: '1d' }),
+            token: await this.jwtService.signAsync({ id, username, fullname } satisfies JwtPayload, { expiresIn: '1d' }),
             profile: { id, username, fullname },
         };
     }
