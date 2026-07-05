@@ -5,9 +5,11 @@ import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { SqlLoggerSubscriber } from './database/sql-logger.subscriber';
+import { MapperModule } from '@ilhamtahir/nestjs-mapper';
 
 @Module({
     imports: [
+        MapperModule.forRoot(),
         TypeOrmModule.forRoot({
             type: 'mysql',
             host: 'localhost',
