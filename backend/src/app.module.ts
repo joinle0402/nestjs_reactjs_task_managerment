@@ -6,6 +6,7 @@ import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { SqlLoggerSubscriber } from './database/sql-logger.subscriber';
 import { MapperModule } from '@ilhamtahir/nestjs-mapper';
+import { TaskModule } from './task/task.module';
 
 @Module({
     imports: [
@@ -24,6 +25,7 @@ import { MapperModule } from '@ilhamtahir/nestjs-mapper';
         }),
         UserModule,
         AuthModule,
+        TaskModule,
     ],
     controllers: [AppController],
     providers: [AppService],

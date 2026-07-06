@@ -17,6 +17,12 @@ export class UserService {
         return this.userRepository.findOne({ where: { id } });
     }
 
+    async findByIdOrFail(id: number): Promise<UserEntity> {
+        const entity = await this.userRepository.findOne({ where: { id } });
+        throwIfNull(entity, 'Thông tin người dùng không tồn tại!', HttpStatus.NOT_FOUND);
+        return entity;
+    }
+
     async findAll(): Promise<UserResponse[]> {
         const entities = await this.userRepository.find({ order: { id: 'DESC' } });
         return this.userMapper.toResponseList(entities);
