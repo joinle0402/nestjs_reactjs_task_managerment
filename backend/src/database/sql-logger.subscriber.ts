@@ -107,7 +107,7 @@ function formatSql(query: string): { query: string; inline: boolean } {
         strings.push(value);
         return `\u0000${strings.length - 1}\u0000`;
     });
-    const normalizedQuery = maskedQuery.replace(/\s+/g, ' ').trim();
+    const normalizedQuery = shortenEntityAliases(maskedQuery.replace(/\s+/g, ' ').trim());
     const inline = splitClauses(normalizedQuery).length <= 2 && !/\(\s*SELECT\b/i.test(normalizedQuery);
 
     const formattedQuery = (inline ? normalizedQuery : formatLevel(normalizedQuery, 0)).replace(
@@ -121,6 +121,32 @@ function formatSql(query: string): { query: string; inline: boolean } {
     };
 }
 
+function shortenEntityAliases(query: string): string {
+    const aliases = Array.from(query.matchAll(/\b([A-Z][A-Za-z0-9]*Entity)(?=[._\s,)]|$)/g), ([, alias]) => alias);
+    const aliasMap = new Map<string, string>();
+
+    for (const alias of aliases) {
+        aliasMap.set(alias, toShortAlias(alias));
+    }
+
+    for (const [alias, shortAlias] of aliasMap) {
+        query = query.replace(new RegExp(`${escapeRegExp(alias)}(?=[._\\s,)]|$)`, 'g'), shortAlias);
+    }
+
+    return query;
+}
+
+function toShortAlias(alias: string): string {
+    const name = alias.replace(/Entity$/, '');
+    const letters = name.match(/[A-Z]/g);
+
+    return (letters?.join('') || name[0]).toLowerCase();
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function formatLevel(query: string, indent: number): string {
     const clauses = splitClauses(query);
 
@@ -128,10 +154,22 @@ function formatLevel(query: string, indent: number): string {
         return `${' '.repeat(indent)}${formatSubqueries(query, indent)}`;
     }
 
-    return clauses
-        .map(({ keyword, content }) => formatClause(keyword, content, indent))
-        .filter(Boolean)
-        .join('\n');
+    const lines: string[] = [];
+
+    for (let index = 0; index < clauses.length; index++) {
+        const clause = clauses[index];
+        const nextClause = clauses[index + 1];
+
+        if (isJoinKeyword(clause.keyword) && nextClause?.keyword.toUpperCase() === 'ON') {
+            lines.push(formatJoinWithOn(clause.keyword, clause.content, nextClause.content, indent));
+            index++;
+            continue;
+        }
+
+        lines.push(formatClause(clause.keyword, clause.content, indent));
+    }
+
+    return lines.filter(Boolean).join('\n');
 }
 
 function formatClause(keyword: string, content: string, indent: number): string {
@@ -152,25 +190,47 @@ function formatClause(keyword: string, content: string, indent: number): string 
     }
 
     if (normalizedKeyword === 'WHERE' || normalizedKeyword === 'HAVING' || normalizedKeyword === 'ON') {
-        const conditions = splitConditions(content);
-        const lines: string[] = [];
-
-        for (let index = 0; index < conditions.length; index += 3) {
-            const conditionsInLine = conditions.slice(index, index + 3);
-            const line = conditionsInLine
-                .map(({ operator, expression }, conditionIndex) => {
-                    const formattedExpression = formatSubqueries(expression, indent + 4);
-                    return index === 0 && conditionIndex === 0 ? formattedExpression : `${operator} ${formattedExpression}`;
-                })
-                .join(' ');
-
-            lines.push(`${index === 0 ? `${padding}${normalizedKeyword} ` : `${padding}    `}${line}`);
-        }
-
-        return lines.join('\n');
+        return formatConditions(normalizedKeyword, content, indent, `${padding}${normalizedKeyword} `, `${padding}    `);
     }
 
     return `${padding}${normalizedKeyword}${content ? ` ${formatSubqueries(content, indent)}` : ''}`;
+}
+
+function formatJoinWithOn(joinKeyword: string, joinContent: string, onContent: string, indent: number): string {
+    const padding = ' '.repeat(indent);
+    const normalizedJoinKeyword = joinKeyword.toUpperCase().replace(/\s+/g, ' ');
+    const joinPrefix = `${padding}${normalizedJoinKeyword}${joinContent ? ` ${formatSubqueries(joinContent, indent)}` : ''} ON `;
+
+    return formatConditions('ON', onContent, indent, joinPrefix, `${padding}    `);
+}
+
+function formatConditions(
+    keyword: string,
+    content: string,
+    indent: number,
+    firstLinePrefix: string,
+    nextLinePrefix: string,
+): string {
+    const conditions = splitConditions(content);
+    const lines: string[] = [];
+
+    for (let index = 0; index < conditions.length; index += 3) {
+        const conditionsInLine = conditions.slice(index, index + 3);
+        const line = conditionsInLine
+            .map(({ operator, expression }, conditionIndex) => {
+                const formattedExpression = formatSubqueries(removeWrappingParentheses(expression), indent + 4);
+                return index === 0 && conditionIndex === 0 ? formattedExpression : `${operator} ${formattedExpression}`;
+            })
+            .join(' ');
+
+        lines.push(`${index === 0 ? firstLinePrefix : nextLinePrefix}${line}`);
+    }
+
+    return lines.join('\n');
+}
+
+function isJoinKeyword(keyword: string): boolean {
+    return /^(LEFT\s+(?:OUTER\s+)?JOIN|RIGHT\s+(?:OUTER\s+)?JOIN|FULL\s+(?:OUTER\s+)?JOIN|INNER\s+JOIN|CROSS\s+JOIN|JOIN)$/i.test(keyword);
 }
 
 function splitClauses(query: string): Array<{ keyword: string; content: string }> {
@@ -268,6 +328,16 @@ function splitConditions(value: string): Array<{ operator: string; expression: s
 
     conditions.push({ operator, expression: value.slice(expressionStart).trim() });
     return conditions.filter(({ expression }) => expression);
+}
+
+function removeWrappingParentheses(value: string): string {
+    let result = value.trim();
+
+    while (result.startsWith('(') && result.endsWith(')') && findClosingParenthesis(result, 0) === result.length - 1) {
+        result = result.slice(1, -1).trim();
+    }
+
+    return result;
 }
 
 function formatSubqueries(value: string, indent: number): string {
